@@ -1,26 +1,25 @@
 """
-Ponto de entrada principal do sistema multi-agente (versão pronta para testes via API).
+Ponto de entrada principal do sistema multi-agente.
 """
 import os
 import logging
+import json
+import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from flask import Flask, render_template, redirect, url_for, flash, request, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from src.data.database import init_db, get_db, User
-from src.orchestrator.orchestrator import Orchestrator
+from flask import Flask, render_template, request, jsonify
+
+from src.config.config import Config
 from src.core.genai_client import GenAIClient
-from src.auth.auth_manager import AuthManager
+from src.core.mcp_handler import MCPHandler
 from src.agents.front_agent import FrontAgent
 from src.agents.back_agent import BackAgent
 from src.agents.qa_agent import QAAgent
+from src.agents.orchestrator import Orchestrator
 
 # --- Carregar variáveis de ambiente da raiz do projeto ---
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
-
-# Verificação opcional
-print("OPENAI_API_KEY =", os.getenv("OPENAI_API_KEY"))
 
 # --- Configurar logging ---
 logging.basicConfig(
@@ -34,77 +33,71 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "chave_secreta_padrao")
 app.config["DEBUG"] = os.getenv("DEBUG", "False").lower() == "true"
 
-# --- Configurar o gerenciador de login ---
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "login"
-
-# --- Inicializar o banco de dados ---
-init_db()
+# --- Carregar configurações ---
+config = Config()
+if os.getenv("OPENAI_API_KEY"):
+    config.set_openai_api_key(os.getenv("OPENAI_API_KEY"))
 
 # --- Inicializar o cliente GenAI ---
 genai_client = GenAIClient(
-    api_key=os.getenv("OPENAI_API_KEY")  # ⚡ chave segura
+    api_key=config.get_openai_api_key(),
+    model=config.get_model()
 )
 
-# --- Inicializar os agentes ---
-front_agent = FrontAgent(genai_client=genai_client)
-back_agent = BackAgent(genai_client=genai_client)
-qa_agent = QAAgent(genai_client=genai_client)
+# --- Inicializar o handler MCP ---
+mcp_handler = MCPHandler()
 
+# --- Inicializar os agentes ---
+front_agent = FrontAgent(genai_client=genai_client, mcp_handler=mcp_handler)
+back_agent = BackAgent(genai_client=genai_client, mcp_handler=mcp_handler)
+qa_agent = QAAgent(genai_client=genai_client, mcp_handler=mcp_handler)
 
 # --- Inicializar o orquestrador ---
 orchestrator = Orchestrator(
     front_agent=front_agent,
     back_agent=back_agent,
-    qa_agent=qa_agent,
-    db=get_db(),
-    logger=logger
+    qa_agent=qa_agent
 )
-
-# ----- Flask Login -----
-@login_manager.user_loader
-def load_user(user_id):
-    return User.get_by_id(int(user_id))
 
 # ----- Rotas padrão -----
 @app.route("/")
 def index():
     return render_template("index.html")
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        db = get_db()
-        user = db.query(User).filter_by(username=username).first()
-        if user and user.check_password(password):
-            login_user(user)
-            flash("Login realizado com sucesso!", "success")
-            return redirect(url_for("dashboard"))
+# ----- API Routes -----
+@app.route("/api/process", methods=["POST"])
+def process_task():
+    """
+    Processa uma tarefa enviada via API.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "Dados não fornecidos"}), 400
+            
+        # Verificar tipo de tarefa
+        task_type = data.get("type", "process")
+        
+        if task_type == "generate_code":
+            result = orchestrator.generate_code(data)
         else:
-            flash("Credenciais inválidas. Tente novamente.", "danger")
-    return render_template("login.html")
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        username = request.form.get("username")
-        email = request.form.get("email")
-        password = request.form.get("password")
-        db = get_db()
-        existing_user = db.query(User).filter_by(username=username).first()
-        if existing_user:
-            flash("Nome de usuário já existe. Escolha outro.", "danger")
-        else:
-            new_user = User(username=username, email=email)
-            new_user.set_password(password)
-            db.add(new_user)
-            db.commit()
-            flash("Registro realizado com sucesso! Faça login.", "success")
-            return redirect(url_for("login"))
-    return render_template("register.html")
+            result = orchestrator.process_task(data)
+            
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Erro ao processar tarefa: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Erro ao processar tarefa: {str(e)}"
+        }), 500
+if __name__ == "__main__":
+    # Verificar se a chave da API está configurada
+    if not config.get_openai_api_key():
+        logger.error("Chave da API OpenAI não configurada. Configure em config.json ou defina OPENAI_API_KEY no ambiente.")
+        exit(1)
+        
+    # Iniciar o servidor Flask
+    app.run(host="0.0.0.0", port=5000)
 
 @app.route("/logout")
 @login_required

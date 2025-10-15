@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Multi-Agente</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .card {
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .card-header {
+            background-color: #6c757d;
+            color: white;
+            font-weight: bold;
+            border-radius: 10px 10px 0 0;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+            border-color: #0a58ca;
+        }
+        .code-output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .agent-section {
+            border-left: 5px solid;
+            padding-left: 15px;
+            margin-bottom: 15px;
+        }
+        .front-agent {
+            border-color: #0d6efd;
+        }
+        .back-agent {
+            border-color: #198754;
+        }
+        .qa-agent {
+            border-color: #dc3545;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .loading-spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Sistema Multi-Agente</h1>
+        
+        <div class="card">
+            <div class="card-header">
+                Descrição do Sistema
+            </div>
+            <div class="card-body">
+                <p>Este sistema utiliza três agentes especializados para gerar código completo a partir de uma descrição:</p>
+                <ul>
+                    <li><strong>Agente Front-end:</strong> Especializado em interfaces de usuário e experiência do usuário</li>
+                    <li><strong>Agente Back-end:</strong> Especializado em APIs, bancos de dados e lógica de negócio</li>
+                    <li><strong>Agente QA:</strong> Especializado em testes, verificação de qualidade e segurança</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                Nova Tarefa
+            </div>
+            <div class="card-body">
+                <form id="taskForm">
+                    <div class="mb-3">
+                        <label for="taskTitle" class="form-label">Título</label>
+                        <input type="text" class="form-control" id="taskTitle" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="taskDescription" class="form-label">Descrição</label>
+                        <textarea class="form-control" id="taskDescription" rows="5" required></textarea>
+                        <div class="form-text">Descreva o sistema que você deseja criar em detalhes.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="taskType" class="form-label">Tipo de Tarefa</label>
+                        <select class="form-select" id="taskType">
+                            <option value="generate_code" selected>Gerar Código Completo</option>
+                            <option value="process">Processar Tarefa</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Enviar</button>
+                </form>
+                
+                <div class="loading" id="loadingIndicator">
+                    <div class="spinner-border loading-spinner text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                    <p class="mt-2">Processando sua solicitação. Isso pode levar alguns minutos...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="resultCard" style="display: none;">
+            <div class="card-header">
+                Resultado
+            </div>
+            <div class="card-body">
+                <div id="resultContent">
+                    <!-- Conteúdo do resultado será inserido aqui -->
+                </div>
+                
+                <div class="mt-4">
+                    <h5>Detalhes do Processamento</h5>
+                    
+                    <div class="agent-section front-agent">
+                        <h6>Agente Front-end</h6>
+                        <div id="frontendResult"></div>
+                    </div>
+                    
+                    <div class="agent-section back-agent">
+                        <h6>Agente Back-end</h6>
+                        <div id="backendResult"></div>
+                    </div>
+                    
+                    <div class="agent-section qa-agent">
+                        <h6>Agente QA</h6>
+                        <div id="qaResult"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <h5>Código Gerado</h5>
+                    <div class="code-output" id="generatedCode"></div>
+                </div>
+                
+                <button class="btn btn-primary mt-3" id="downloadBtn">Baixar Código</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('taskForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Mostrar indicador de carregamento
+            document.getElementById('loadingIndicator').style.display = 'block';
+            
+            // Obter dados do formulário
+            const taskData = {
+                title: document.getElementById('taskTitle').value,
+                description: document.getElementById('taskDescription').value,
+                type: document.getElementById('taskType').value
+            };
+            
+            // Enviar solicitação para a API
+            fetch('/api/process', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(taskData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Ocultar indicador de carregamento
+                document.getElementById('loadingIndicator').style.display = 'none';
+                
+                // Mostrar card de resultado
+                document.getElementById('resultCard').style.display = 'block';
+                
+                // Preencher resultados
+                if (data.success) {
+                    // Resultado geral
+                    document.getElementById('resultContent').innerHTML = `
+                        <div class="alert alert-success">
+                            <h4>Tarefa concluída com sucesso!</h4>
+                            <p>ID da Tarefa: ${data.task_id}</p>
+                        </div>
+                    `;
+                    
+                    // Resultados específicos dos agentes
+                    if (data.frontend && data.frontend.ui_code) {
+                        document.getElementById('frontendResult').innerHTML = `
+                            <p>Interface de usuário gerada com sucesso.</p>
+                        `;
+                    }
+                    
+                    if (data.backend) {
+                        let backendHtml = '<ul>';
+                        if (data.backend.data_model) {
+                            backendHtml += '<li>Modelo de dados criado</li>';
+                        }
+                        if (data.backend.api_code) {
+                            backendHtml += '<li>API implementada</li>';
+                        }
+                        backendHtml += '</ul>';
+                        document.getElementById('backendResult').innerHTML = backendHtml;
+                    }
+                    
+                    if (data.qa) {
+                        let qaHtml = '<ul>';
+                        if (data.qa.tests) {
+                            qaHtml += '<li>Testes automatizados gerados</li>';
+                        }
+                        if (data.qa.security) {
+                            qaHtml += `<li>Auditoria de segurança: ${data.qa.security.summary || 'Concluída'}</li>`;
+                        }
+                        qaHtml += '</ul>';
+                        document.getElementById('qaResult').innerHTML = qaHtml;
+                    }
+                    
+                    // Código gerado
+                    let codeOutput = '';
+                    
+                    if (data.frontend && data.frontend.ui_code) {
+                        codeOutput += '/* Frontend Code */\n' + data.frontend.ui_code + '\n\n';
+                    }
+                    
+                    if (data.backend && data.backend.api_code) {
+                        codeOutput += '/* Backend Code */\n' + data.backend.api_code + '\n\n';
+                    }
+                    
+                    if (data.qa && data.qa.tests) {
+                        codeOutput += '/* Tests */\n' + data.qa.tests;
+                    }
+                    
+                    document.getElementById('generatedCode').textContent = codeOutput;
+                    
+                    // Configurar botão de download
+                    document.getElementById('downloadBtn').onclick = function() {
+                        const blob = new Blob([codeOutput], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'generated_code.txt';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    };
+                } else {
+                    // Erro
+                    document.getElementById('resultContent').innerHTML = `
+                        <div class="alert alert-danger">
+                            <h4>Erro ao processar a tarefa</h4>
+                            <p>${data.error || 'Ocorreu um erro desconhecido.'}</p>
+                        </div>
+                    `;
+                    
+                    document.getElementById('frontendResult').innerHTML = '';
+                    document.getElementById('backendResult').innerHTML = '';
+                    document.getElementById('qaResult').innerHTML = '';
+                    document.getElementById('generatedCode').textContent = '';
+                }
+            })
+            .catch(error => {
+                // Ocultar indicador de carregamento
+                document.getElementById('loadingIndicator').style.display = 'none';
+                
+                // Mostrar erro
+                document.getElementById('resultCard').style.display = 'block';
+                document.getElementById('resultContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <h4>Erro de comunicação</h4>
+                        <p>Não foi possível se comunicar com o servidor. Tente novamente mais tarde.</p>
+                    </div>
+                `;
+            });
+        });
+    </script>
+</body>
+</html>
